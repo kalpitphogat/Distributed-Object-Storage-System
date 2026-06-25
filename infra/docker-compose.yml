@@ -1,0 +1,210 @@
+version: '3.9'
+
+services:
+  # ── Metadata store ────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: mini-s3-postgres
+    environment:
+      POSTGRES_DB: minis3
+      POSTGRES_USER: miniadmin
+      POSTGRES_PASSWORD: minipassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U miniadmin -d minis3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Cache / coordination ──────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: mini-s3-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Storage ring — 5 MinIO nodes (Phase 3: RF=3 replication) ─────────────
+  minio-1:
+    image: minio/minio:latest
+    container_name: mini-s3-minio-1
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio1_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  minio-2:
+    image: minio/minio:latest
+    container_name: mini-s3-minio-2
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    volumes:
+      - minio2_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  minio-3:
+    image: minio/minio:latest
+    container_name: mini-s3-minio-3
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9004:9000"
+      - "9005:9001"
+    volumes:
+      - minio3_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  minio-4:
+    image: minio/minio:latest
+    container_name: mini-s3-minio-4
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9006:9000"
+      - "9007:9001"
+    volumes:
+      - minio4_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  minio-5:
+    image: minio/minio:latest
+    container_name: mini-s3-minio-5
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9008:9000"
+      - "9009:9001"
+    volumes:
+      - minio5_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── API (NestJS) ─────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: mini-s3-api
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://miniadmin:minipassword@postgres:5432/minis3
+      REDIS_URL: redis://redis:6379
+      MINIO_NODE_1_URL: http://minio-1:9000
+      MINIO_NODE_2_URL: http://minio-2:9000
+      MINIO_NODE_3_URL: http://minio-3:9000
+      MINIO_NODE_4_URL: http://minio-4:9000
+      MINIO_NODE_5_URL: http://minio-5:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      REPLICATION_FACTOR: 3
+      WRITE_QUORUM: 2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Worker (BullMQ consumers) ─────────────────────────────────────────────
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+    container_name: mini-s3-worker
+    environment:
+      DATABASE_URL: postgresql://miniadmin:minipassword@postgres:5432/minis3
+      REDIS_URL: redis://redis:6379
+      MINIO_NODE_1_URL: http://minio-1:9000
+      MINIO_NODE_2_URL: http://minio-2:9000
+      MINIO_NODE_3_URL: http://minio-3:9000
+      MINIO_NODE_4_URL: http://minio-4:9000
+      MINIO_NODE_5_URL: http://minio-5:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      REPLICATION_FACTOR: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Admin console (Next.js) — Phase 7 ────────────────────────────────────
+  admin-console:
+    build:
+      context: ..
+      dockerfile: apps/admin-console/Dockerfile
+    container_name: mini-s3-admin
+    ports:
+      - "3001:3001"
+    environment:
+      API_URL: http://api:3000
+      PORT: 3001
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio1_data:
+  minio2_data:
+  minio3_data:
+  minio4_data:
+  minio5_data:

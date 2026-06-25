@@ -1,0 +1,20 @@
+{
+  "name": "mini-s3",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:unit": "pnpm -r test:unit",
+    "test:integration": "pnpm -r test:integration",
+    "lint": "pnpm -r lint",
+    "migrate": "node-pg-migrate -m infra/migrations up",
+    "migrate:create": "node-pg-migrate -m infra/migrations create"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "node-pg-migrate": "^7.7.0",
+    "pg": "^8.12.0"
+  }
+}

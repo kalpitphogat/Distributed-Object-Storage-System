@@ -1,0 +1,16 @@
+{
+  "name": "@mini-s3/sdk",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test:unit": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "undici": "^6.19.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}
